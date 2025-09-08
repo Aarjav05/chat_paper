@@ -233,7 +233,7 @@ class ChatServer:
         print("Server stopped")
 
 def main():
-    server = ChatServer()
+    server = ChatServer(port=12345)
     try:
         server.start_server()
     except KeyboardInterrupt:
