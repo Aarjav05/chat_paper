@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Multi-User Chat Server with AES and RSA Encryption Support
-Run this server first, then run multiple client instances
-"""
 
 import socket
 import threading
@@ -21,19 +17,19 @@ class ChatServer:
     def __init__(self, host='localhost', port=12345):
         self.host = host
         self.port = port
-        self.clients = {}  # {client_socket: {'username': str, 'public_key': bytes}}
+        self.clients = {}  
         self.server_socket = None
         self.running = False
         
-        # Generate server RSA key pair
+       
         self.private_key = rsa.generate_private_key(
             public_exponent=65537,
             key_size=2048
         )
         self.public_key = self.private_key.public_key()
         
-        # AES key for symmetric encryption (shared among all users for demo)
-        self.aes_key = os.urandom(32)  # 256-bit key
+        
+        self.aes_key = os.urandom(32)  
         
         print(f"Chat Server initialized on {host}:{port}")
         print(f"AES Key (demo): {base64.b64encode(self.aes_key).decode()[:20]}...")
@@ -143,21 +139,21 @@ class ChatServer:
         print(f"User '{username}' joined the chat")
 
     def handle_chat_message(self, sender_socket, message_data):
-        """Handle chat messages with encryption metrics"""
+        
         if sender_socket not in self.clients:
             return
             
         username = self.clients[sender_socket]['username']
         
-        # Add server timestamp and sender info
+        
         message_data['sender'] = username
         message_data['server_timestamp'] = datetime.now().isoformat()
         message_data['type'] = 'chat'
         
-        # Broadcast to all clients including sender (for confirmation)
+        
         self.broadcast_message(message_data)
         
-        # Log message metrics
+        
         encryption_type = message_data.get('encryption_type', 'unknown')
         enc_time = message_data.get('encryption_time', 0)
         dec_time = message_data.get('decryption_time', 0)
@@ -166,7 +162,7 @@ class ChatServer:
               f"(E:{enc_time}ms, D:{dec_time}ms)")
 
     def send_user_list(self, client_socket):
-        """Send list of online users"""
+        
         users = [info['username'] for info in self.clients.values()]
         user_list_data = {
             'type': 'user_list',
@@ -176,7 +172,7 @@ class ChatServer:
         self.send_to_client(client_socket, user_list_data)
 
     def broadcast_message(self, message_data, exclude=None):
-        """Broadcast message to all connected clients"""
+        
         disconnected_clients = []
         
         for client_socket in list(self.clients.keys()):
