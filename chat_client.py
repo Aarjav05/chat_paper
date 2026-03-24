@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-"""
-Multi-User Chat Client with Tkinter GUI and Encryption Support
-Run multiple instances to simulate different users
-"""
-
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+import customtkinter as ctk
 import socket
 import threading
 import json
@@ -37,119 +32,129 @@ class ChatClient:
             'total_bytes_received': 0
         }
         
-        # Create GUI
+        ctk.set_appearance_mode("Dark")
+        ctk.set_default_color_theme("blue")
         self.setup_gui()
         
     def setup_gui(self):
         """Initialize the GUI"""
-        self.root = tk.Tk()
-        self.root.title("Encrypted Chat Client")
-        self.root.geometry("800x600")
-        self.root.configure(bg='#f0f0f0')
+        self.root = ctk.CTk()
+        self.root.title("Encrypted Crypto Chat")
+        self.root.geometry("900x650")
         
         # Create notebook for tabs
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.notebook = ctk.CTkTabview(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=20, pady=20)
         
-        # Connection tab
+        self.notebook.add("Connection")
+        self.notebook.add("Chat")
+        self.notebook.add("Performance")
+        
         self.setup_connection_tab()
-        
-        # Chat tab
         self.setup_chat_tab()
-        
-        # Metrics tab
         self.setup_metrics_tab()
         
-        # Protocol handlers
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
     def setup_connection_tab(self):
-        """Setup connection configuration tab"""
-        conn_frame = ttk.Frame(self.notebook)
-        self.notebook.add(conn_frame, text="Connection")
+        conn_frame = self.notebook.tab("Connection")
         
-        # Connection settings
-        settings_frame = ttk.LabelFrame(conn_frame, text="Server Settings", padding=20)
-        settings_frame.pack(fill=tk.X, padx=20, pady=20)
+        # Settings
+        settings_frame = ctk.CTkFrame(conn_frame)
+        settings_frame.pack(fill="x", padx=40, pady=20)
         
-        ttk.Label(settings_frame, text="Server:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.server_entry = ttk.Entry(settings_frame, width=30)
+        ctk.CTkLabel(settings_frame, text="Server:").grid(row=0, column=0, sticky="w", padx=20, pady=10)
+        self.server_entry = ctk.CTkEntry(settings_frame, width=250)
         self.server_entry.insert(0, "localhost")
-        self.server_entry.grid(row=0, column=1, padx=10, pady=5)
+        self.server_entry.grid(row=0, column=1, padx=20, pady=10)
         
-        ttk.Label(settings_frame, text="Port:").grid(row=1, column=0, sticky=tk.W, pady=5)
-        self.port_entry = ttk.Entry(settings_frame, width=30)
+        ctk.CTkLabel(settings_frame, text="Port:").grid(row=1, column=0, sticky="w", padx=20, pady=10)
+        self.port_entry = ctk.CTkEntry(settings_frame, width=250)
         self.port_entry.insert(0, "12345")
-        self.port_entry.grid(row=1, column=1, padx=10, pady=5)
+        self.port_entry.grid(row=1, column=1, padx=20, pady=10)
         
-        ttk.Label(settings_frame, text="Username:").grid(row=2, column=0, sticky=tk.W, pady=5)
-        self.username_entry = ttk.Entry(settings_frame, width=30)
+        ctk.CTkLabel(settings_frame, text="Username:").grid(row=2, column=0, sticky="w", padx=20, pady=10)
+        self.username_entry = ctk.CTkEntry(settings_frame, width=250)
         self.username_entry.insert(0, f"User{int(time.time()) % 1000}")
-        self.username_entry.grid(row=2, column=1, padx=10, pady=5)
+        self.username_entry.grid(row=2, column=1, padx=20, pady=10)
         
         # Encryption type selection
-        encryption_frame = ttk.LabelFrame(conn_frame, text="Encryption Settings", padding=20)
-        encryption_frame.pack(fill=tk.X, padx=20, pady=10)
+        enc_frame = ctk.CTkFrame(conn_frame)
+        enc_frame.pack(fill="x", padx=40, pady=10)
         
-        self.encryption_var = tk.StringVar(value="aes")
-        ttk.Radiobutton(encryption_frame, text="AES-256 (Symmetric)", 
-                       variable=self.encryption_var, value="aes").pack(anchor=tk.W)
-        ttk.Radiobutton(encryption_frame, text="RSA-2048 (Asymmetric)", 
-                       variable=self.encryption_var, value="rsa").pack(anchor=tk.W)
+        ctk.CTkLabel(enc_frame, text="Encryption Mode", font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=20, pady=(10,5))
+        self.encryption_var = ctk.StringVar(value="aes")
         
-        # Connection buttons
-        button_frame = ttk.Frame(conn_frame)
-        button_frame.pack(fill=tk.X, padx=20, pady=20)
+        ctk.CTkRadioButton(enc_frame, text="AES-256 (Symmetric) - Recommended", variable=self.encryption_var, value="aes").pack(anchor="w", padx=20, pady=10)
+        ctk.CTkRadioButton(enc_frame, text="RSA-2048 (Asymmetric) - Heavy P2P", variable=self.encryption_var, value="rsa").pack(anchor="w", padx=20, pady=(0, 10))
         
-        self.connect_btn = ttk.Button(button_frame, text="Connect", command=self.connect_to_server)
-        self.connect_btn.pack(side=tk.LEFT, padx=5)
+        # Action Buttons
+        btn_frame = ctk.CTkFrame(conn_frame, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=40, pady=20)
         
-        self.disconnect_btn = ttk.Button(button_frame, text="Disconnect", 
-                                        command=self.disconnect_from_server, state=tk.DISABLED)
-        self.disconnect_btn.pack(side=tk.LEFT, padx=5)
+        self.connect_btn = ctk.CTkButton(btn_frame, text="Connect", command=self.connect_to_server, fg_color="#10b981", hover_color="#059669")
+        self.connect_btn.pack(side="left", padx=5)
         
-        # Status
-        self.status_var = tk.StringVar(value="Disconnected")
-        ttk.Label(button_frame, textvariable=self.status_var).pack(side=tk.RIGHT)
+        self.disconnect_btn = ctk.CTkButton(btn_frame, text="Disconnect", command=self.disconnect_from_server, state="disabled", fg_color="#ef4444", hover_color="#dc2626")
+        self.disconnect_btn.pack(side="left", padx=5)
+        
+        # Status Light
+        bg_col = self.root._apply_appearance_mode(ctk.ThemeManager.theme["CTkFrame"]["fg_color"])
+        self.status_canvas = tk.Canvas(btn_frame, width=16, height=16, bg=btn_frame._bg_color, highlightthickness=0)
+        # Handle tricky custom tkinter background matching for canvas
+        try:
+            self.status_canvas.configure(bg=self.root._apply_appearance_mode(ctk.ThemeManager.theme["CTk"]["fg_color"]))
+        except:
+            pass
+        self.status_canvas.pack(side="right", padx=(0, 20), pady=7)
+        self.status_circle = self.status_canvas.create_oval(2, 2, 14, 14, fill="#ef4444", outline="")
+        
+        self.status_var = ctk.StringVar(value="Disconnected")
+        ctk.CTkLabel(btn_frame, textvariable=self.status_var).pack(side="right", padx=10)
         
     def setup_chat_tab(self):
-        """Setup chat interface tab"""
-        chat_frame = ttk.Frame(self.notebook)
-        self.notebook.add(chat_frame, text="Chat", state=tk.DISABLED)
+        chat_frame = self.notebook.tab("Chat")
         
-        # Chat display area
-        self.chat_display = scrolledtext.ScrolledText(
-            chat_frame, wrap=tk.WORD, state=tk.DISABLED,
-            height=20, font=('Consolas', 10)
-        )
-        self.chat_display.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        chat_area = ctk.CTkFrame(chat_frame, fg_color="transparent")
+        chat_area.pack(side="left", fill="both", expand=True, padx=(0, 10))
         
-        # Message input area
-        input_frame = ttk.Frame(chat_frame)
-        input_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        self.chat_display = ctk.CTkTextbox(chat_area, state="disabled", font=("Segoe UI", 13), wrap="word")
+        self.chat_display.pack(fill="both", expand=True, pady=(0, 10))
         
-        self.message_entry = ttk.Entry(input_frame, font=('Arial', 11))
-        self.message_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        # Tags for bubbles
+        self.chat_display.tag_config('right', justify='right', foreground='#60a5fa', spacing1=10, spacing3=10)
+        self.chat_display.tag_config('left', justify='left', foreground='#e4e4e7', spacing1=10, spacing3=10)
+        self.chat_display.tag_config('system', justify='center', foreground='#fbbf24', spacing1=10, spacing3=10)
+        self.chat_display.tag_config('meta_right', justify='right', foreground='#71717a', spacing3=15)
+        self.chat_display.tag_config('meta_left', justify='left', foreground='#71717a', spacing3=15)
+
+        input_frame = ctk.CTkFrame(chat_area, fg_color="transparent")
+        input_frame.pack(fill="x")
+        
+        self.message_entry = ctk.CTkEntry(input_frame, placeholder_text="Type your message here...", height=40)
+        self.message_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         self.message_entry.bind('<Return>', lambda e: self.send_message())
         
-        self.send_btn = ttk.Button(input_frame, text="Send", command=self.send_message)
-        self.send_btn.pack(side=tk.RIGHT)
+        self.send_btn = ctk.CTkButton(input_frame, text="Send", command=self.send_message, width=80, height=40)
+        self.send_btn.pack(side="right")
         
-        # Users list
-        users_frame = ttk.LabelFrame(chat_frame, text="Online Users")
-        users_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        # User List
+        sidebar = ctk.CTkFrame(chat_frame, width=200)
+        sidebar.pack(side="right", fill="y")
         
-        self.users_listbox = tk.Listbox(users_frame, height=3)
-        self.users_listbox.pack(fill=tk.X, padx=5, pady=5)
+        ctk.CTkLabel(sidebar, text="Online Users", font=("Segoe UI", 16, "bold")).pack(pady=(15, 5))
+        
+        self.users_scroll = ctk.CTkScrollableFrame(sidebar, fg_color="transparent")
+        self.users_scroll.pack(fill="both", expand=True, padx=5, pady=5)
+        self.user_widgets = []
         
     def setup_metrics_tab(self):
-        """Setup performance metrics tab"""
-        metrics_frame = ttk.Frame(self.notebook)
-        self.notebook.add(metrics_frame, text="Performance")
+        metrics_frame = self.notebook.tab("Performance")
         
-        # Real-time metrics
-        realtime_frame = ttk.LabelFrame(metrics_frame, text="Real-time Metrics", padding=20)
-        realtime_frame.pack(fill=tk.X, padx=20, pady=20)
+        realtime_frame = ctk.CTkFrame(metrics_frame)
+        realtime_frame.pack(fill="x", padx=40, pady=20)
+        
+        ctk.CTkLabel(realtime_frame, text="Real-time Metrics", font=("Segoe UI", 16, "bold")).grid(row=0, column=0, columnspan=2, sticky="w", pady=15, padx=20)
         
         self.metrics_labels = {}
         metrics_list = [
@@ -162,43 +167,11 @@ class ChatClient:
         ]
         
         for i, (label, key) in enumerate(metrics_list):
-            ttk.Label(realtime_frame, text=f"{label}:").grid(row=i, column=0, sticky=tk.W, pady=2)
-            self.metrics_labels[key] = ttk.Label(realtime_frame, text="0", font=('Consolas', 10, 'bold'))
-            self.metrics_labels[key].grid(row=i, column=1, sticky=tk.W, padx=20, pady=2)
-        
-        # Encryption comparison
-        comparison_frame = ttk.LabelFrame(metrics_frame, text="Encryption Comparison", padding=20)
-        comparison_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
-        
-        comparison_text = """
-AES-256 (Symmetric Encryption):
-✓ Very fast encryption/decryption (< 1ms typically)
-✓ Low CPU and memory usage
-✓ Minimal message overhead
-✓ Excellent for high-volume messaging
-✗ Key distribution challenges
-✗ Same key for all participants
-
-RSA-2048 (Asymmetric Encryption):
-✓ Secure key exchange
-✓ No shared secret required
-✓ Perfect for initial handshakes
-✗ Much slower (10-50ms per operation)
-✗ High CPU usage
-✗ Significant message size overhead
-✗ Not suitable for large messages
-        """
-        
-        comparison_display = scrolledtext.ScrolledText(
-            comparison_frame, wrap=tk.WORD, height=15,
-            font=('Consolas', 9), state=tk.NORMAL
-        )
-        comparison_display.insert(tk.END, comparison_text)
-        comparison_display.configure(state=tk.DISABLED)
-        comparison_display.pack(fill=tk.BOTH, expand=True)
-        
+            ctk.CTkLabel(realtime_frame, text=f"{label}:", font=("Segoe UI", 13)).grid(row=i+1, column=0, sticky="w", pady=5, padx=20)
+            self.metrics_labels[key] = ctk.CTkLabel(realtime_frame, text="0", font=("Consolas", 15, "bold"), text_color="#10b981")
+            self.metrics_labels[key].grid(row=i+1, column=1, sticky="w", padx=20, pady=5)
+            
     def connect_to_server(self):
-        """Connect to the chat server"""
         try:
             server = self.server_entry.get() or "localhost"
             port = int(self.port_entry.get() or "12345")
@@ -208,7 +181,6 @@ RSA-2048 (Asymmetric Encryption):
             self.socket.connect((server, port))
             self.connected = True
             
-            # Send join message
             join_data = {
                 'type': 'join',
                 'username': self.username,
@@ -217,25 +189,24 @@ RSA-2048 (Asymmetric Encryption):
             }
             self.send_data(join_data)
             
-            # Start receiver thread
             receiver_thread = threading.Thread(target=self.receive_messages)
             receiver_thread.daemon = True
             receiver_thread.start()
             
-            # Update GUI
+            # Switch UI elements
             self.status_var.set(f"Connected as {self.username}")
-            self.connect_btn.configure(state=tk.DISABLED)
-            self.disconnect_btn.configure(state=tk.NORMAL)
-            self.notebook.tab(1, state=tk.NORMAL)  # Enable chat tab
-            self.notebook.select(1)  # Switch to chat tab
+            self.status_canvas.itemconfig(self.status_circle, fill="#10b981") # Green
+            self.connect_btn.configure(state="disabled")
+            self.disconnect_btn.configure(state="normal")
+            self.notebook.set("Chat")
             
             self.add_to_chat("System", "Connected to server!", is_system=True)
             
         except Exception as e:
+            from tkinter import messagebox
             messagebox.showerror("Connection Error", f"Failed to connect: {e}")
             
     def disconnect_from_server(self):
-        """Disconnect from the server"""
         self.connected = False
         if self.socket:
             try:
@@ -243,25 +214,19 @@ RSA-2048 (Asymmetric Encryption):
             except:
                 pass
         
-        # Update GUI
         self.status_var.set("Disconnected")
-        self.connect_btn.configure(state=tk.NORMAL)
-        self.disconnect_btn.configure(state=tk.DISABLED)
-        self.notebook.tab(1, state=tk.DISABLED)  # Disable chat tab
-        self.notebook.select(0)  # Switch to connection tab
+        self.status_canvas.itemconfig(self.status_circle, fill="#ef4444") # Red
+        self.connect_btn.configure(state="normal")
+        self.disconnect_btn.configure(state="disabled")
         
         self.add_to_chat("System", "Disconnected from server", is_system=True)
         
     def send_message(self):
-        """Send a chat message"""
         message = self.message_entry.get().strip()
         if not message or not self.connected:
             return
             
-        # Clear input immediately
         self.message_entry.delete(0, tk.END)
-        
-        # Offload logic to background thread to prevent UI freezing
         threading.Thread(target=self._async_send, args=(message,), daemon=True).start()
 
     def _async_send(self, message):
@@ -289,7 +254,6 @@ RSA-2048 (Asymmetric Encryption):
             total_encrypted_size = 0
             original_size = len(message.encode('utf-8'))
             
-            # Encrypt once for everyone in the room!
             for user, pub_key in self.users_public_keys.items():
                 if not pub_key: continue
                 enc_msg, _, enc_sz = encrypt_rsa(pub_key, message)
@@ -315,7 +279,6 @@ RSA-2048 (Asymmetric Encryption):
         self.update_metrics('send', encryption_time, len(message.encode()))
         
     def send_data(self, data):
-        """Send data to server"""
         try:
             message = json.dumps(data).encode('utf-8')
             self.socket.send(message)
@@ -323,10 +286,9 @@ RSA-2048 (Asymmetric Encryption):
             print(f"Error sending data: {e}")
             
     def receive_messages(self):
-        """Receive messages from server"""
         while self.connected:
             try:
-                data = self.socket.recv(4096)
+                data = self.socket.recv(8192)
                 if not data:
                     break
                     
@@ -341,11 +303,9 @@ RSA-2048 (Asymmetric Encryption):
                 break
                 
     def handle_received_message(self, message_data):
-        """Handle different types of received messages"""
         msg_type = message_data.get('type')
         
         if msg_type == 'welcome':
-            # Store AES key securely parsed using RSA if needed
             aes_payload = message_data.get('aes_key')
             aes_type = message_data.get('aes_key_type')
             
@@ -355,7 +315,7 @@ RSA-2048 (Asymmetric Encryption):
                     self.aes_key = base64.b64decode(decrypted_b64.encode('utf-8'))
                 else:
                     self.aes_key = base64.b64decode(aes_payload.encode('utf-8'))
-            self.add_to_chat("Server", message_data.get('message', ''), is_system=True)
+            self.add_to_chat("System", message_data.get('message', ''), is_system=True)
             
         elif msg_type == 'chat':
             threading.Thread(target=self._async_receive, args=(message_data,), daemon=True).start()
@@ -365,7 +325,6 @@ RSA-2048 (Asymmetric Encryption):
             
         elif msg_type == 'user_list':
             users_dict = message_data.get('users', {})
-            # Update local registry of public keys!
             self.users_public_keys.clear()
             for user, pem_str in users_dict.items():
                 if pem_str:
@@ -402,45 +361,54 @@ RSA-2048 (Asymmetric Encryption):
         enc_time = message_data.get('encryption_time', 0)
         overhead = message_data.get('overhead', 0)
         
-        display_text = f"{decrypted_msg}\n    [{encryption_type}] Enc: {enc_time}ms, Dec: {decryption_time:.1f}ms, Overhead: {overhead}%"
-        self.add_to_chat(sender, display_text)
+        meta = f"[{encryption_type}] Enc: {enc_time}ms, Dec: {decryption_time:.1f}ms, Overhead: {overhead}%"
+        self.add_to_chat(sender, decrypted_msg, meta=meta)
         
         if sender != self.username:
             self.update_metrics('receive', decryption_time, len(decrypted_msg.encode()))
             
-    def add_to_chat(self, sender, message, is_system=False):
-        """Add message to chat display"""
+    def add_to_chat(self, sender, message, is_system=False, meta=""):
         def update_chat():
-            self.chat_display.configure(state=tk.NORMAL)
-            
-            timestamp = datetime.now().strftime("%H:%M:%S")
+            self.chat_display.configure(state="normal")
+            timestamp = datetime.now().strftime("%I:%M %p")
             
             if is_system:
-                self.chat_display.insert(tk.END, f"[{timestamp}] {message}\n", "system")
+                self.chat_display.insert(tk.END, f"--- {message} ---\n", 'system')
             else:
-                self.chat_display.insert(tk.END, f"[{timestamp}] {sender}: {message}\n")
+                if sender == self.username:
+                    self.chat_display.insert(tk.END, f"{message}\n", 'right')
+                    self.chat_display.insert(tk.END, f"{meta}\n", 'meta_right')
+                else:
+                    self.chat_display.insert(tk.END, f"{sender} • {timestamp}\n", 'meta_left')
+                    self.chat_display.insert(tk.END, f"{message}\n", 'left')
+                    self.chat_display.insert(tk.END, f"{meta}\n", 'meta_left')
                 
-            self.chat_display.configure(state=tk.DISABLED)
+            self.chat_display.configure(state="disabled")
             self.chat_display.see(tk.END)
             
         self.root.after(0, update_chat)
         
     def update_users_list(self, users):
-        """Update the online users list"""
         def update_list():
-            self.users_listbox.delete(0, tk.END)
+            for widget in self.user_widgets:
+                widget.destroy()
+            self.user_widgets.clear()
+            
             for user in users:
-                self.users_listbox.insert(tk.END, user)
+                is_me = (user == self.username)
+                color = "#60a5fa" if is_me else "#e4e4e7"
+                display_name = f"{user} (You)" if is_me else user
+                
+                lbl = ctk.CTkLabel(self.users_scroll, text=display_name, text_color=color, font=("Segoe UI", 14))
+                lbl.pack(anchor="w", pady=2, padx=5)
+                self.user_widgets.append(lbl)
                 
         self.root.after(0, update_list)
         
     def update_metrics(self, operation, time_ms, bytes_count):
-        """Update performance metrics"""
         if operation == 'send':
             self.metrics['messages_sent'] += 1
             self.metrics['total_bytes_sent'] += bytes_count
-            
-            # Update average encryption time
             current_avg = self.metrics['avg_encryption_time']
             count = self.metrics['messages_sent']
             self.metrics['avg_encryption_time'] = ((current_avg * (count - 1)) + time_ms) / count
@@ -448,13 +416,10 @@ RSA-2048 (Asymmetric Encryption):
         elif operation == 'receive':
             self.metrics['messages_received'] += 1
             self.metrics['total_bytes_received'] += bytes_count
-            
-            # Update average decryption time
             current_avg = self.metrics['avg_decryption_time']
             count = self.metrics['messages_received']
             self.metrics['avg_decryption_time'] = ((current_avg * (count - 1)) + time_ms) / count
             
-        # Update GUI
         def update_gui():
             for key, label in self.metrics_labels.items():
                 value = self.metrics[key]
@@ -466,13 +431,11 @@ RSA-2048 (Asymmetric Encryption):
         self.root.after(0, update_gui)
         
     def on_closing(self):
-        """Handle window closing"""
         if self.connected:
             self.disconnect_from_server()
         self.root.destroy()
         
     def run(self):
-        """Start the GUI"""
         self.root.mainloop()
 
 def main():
