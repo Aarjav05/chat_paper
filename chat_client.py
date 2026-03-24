@@ -12,10 +12,11 @@ import json
 import time
 import base64
 from datetime import datetime
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import hashes
 import os
+from crypto_utils import (
+    generate_rsa_key_pair, public_key_to_pem, pem_to_public_key,
+    encrypt_aes, decrypt_aes, encrypt_rsa, decrypt_rsa
+)
 
 class ChatClient:
     def __init__(self):
@@ -23,6 +24,8 @@ class ChatClient:
         self.connected = False
         self.username = ""
         self.aes_key = None
+        self.users_public_keys = {}
+        self.rsa_private_key, self.rsa_public_key = generate_rsa_key_pair()
         
         # Performance metrics
         self.metrics = {
@@ -209,7 +212,8 @@ RSA-2048 (Asymmetric Encryption):
             join_data = {
                 'type': 'join',
                 'username': self.username,
-                'encryption_type': self.encryption_var.get()
+                'encryption_type': self.encryption_var.get(),
+                'public_key': public_key_to_pem(self.rsa_public_key)
             }
             self.send_data(join_data)
             
@@ -254,76 +258,61 @@ RSA-2048 (Asymmetric Encryption):
         if not message or not self.connected:
             return
             
-        # Measure encryption time
+        # Clear input immediately
+        self.message_entry.delete(0, tk.END)
+        
+        # Offload logic to background thread to prevent UI freezing
+        threading.Thread(target=self._async_send, args=(message,), daemon=True).start()
+
+    def _async_send(self, message):
         start_time = time.time() * 1000
         
         if self.encryption_var.get() == "aes":
-            encrypted_msg, original_size, encrypted_size = self.encrypt_aes(message)
+            encrypted_msg, original_size, encrypted_size = encrypt_aes(self.aes_key, message)
             encryption_type = "AES-256"
+            
+            encryption_time = time.time() * 1000 - start_time
+            message_data = {
+                'type': 'chat',
+                'original_message': message,
+                'encrypted_message': encrypted_msg,
+                'encryption_type': encryption_type,
+                'encryption_time': round(encryption_time, 3),
+                'original_size': original_size,
+                'encrypted_size': encrypted_size,
+                'overhead': round(((encrypted_size - original_size) / original_size) * 100, 1) if original_size else 0,
+                'timestamp': datetime.now().isoformat()
+            }
         else:
-            encrypted_msg, original_size, encrypted_size = self.encrypt_rsa(message)
             encryption_type = "RSA-2048"
+            encrypted_payloads = {}
+            total_encrypted_size = 0
+            original_size = len(message.encode('utf-8'))
             
-        encryption_time = time.time() * 1000 - start_time
-        
-        # Prepare message data
-        message_data = {
-            'type': 'chat',
-            'original_message': message,
-            'encrypted_message': encrypted_msg,
-            'encryption_type': encryption_type,
-            'encryption_time': round(encryption_time, 3),
-            'original_size': original_size,
-            'encrypted_size': encrypted_size,
-            'overhead': round(((encrypted_size - original_size) / original_size) * 100, 1),
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        # Send to server
+            # Encrypt once for everyone in the room!
+            for user, pub_key in self.users_public_keys.items():
+                if not pub_key: continue
+                enc_msg, _, enc_sz = encrypt_rsa(pub_key, message)
+                encrypted_payloads[user] = enc_msg
+                total_encrypted_size += enc_sz
+                
+            encrypted_msg = json.dumps(encrypted_payloads)
+            encryption_time = time.time() * 1000 - start_time
+            
+            message_data = {
+                'type': 'chat',
+                'original_message': message,
+                'encrypted_message': encrypted_msg,
+                'encryption_type': encryption_type,
+                'encryption_time': round(encryption_time, 3),
+                'original_size': original_size,
+                'encrypted_size': len(encrypted_msg),
+                'overhead': round(((len(encrypted_msg) - original_size) / original_size) * 100, 1) if original_size else 0,
+                'timestamp': datetime.now().isoformat()
+            }
+            
         self.send_data(message_data)
-        
-        # Update metrics
         self.update_metrics('send', encryption_time, len(message.encode()))
-        
-        # Clear input
-        self.message_entry.delete(0, tk.END)
-        
-    def encrypt_aes(self, message):
-        """Encrypt message using AES-256"""
-        if not self.aes_key:
-            return message, len(message), len(message)  # Fallback if no key
-            
-        # Generate random IV
-        iv = os.urandom(16)
-        cipher = Cipher(algorithms.AES(self.aes_key), modes.CBC(iv))
-        encryptor = cipher.encryptor()
-        
-        # Pad message to block size
-        padded_message = message.encode()
-        padding_length = 16 - (len(padded_message) % 16)
-        padded_message += bytes([padding_length] * padding_length)
-        
-        # Encrypt
-        encrypted = encryptor.update(padded_message) + encryptor.finalize()
-        
-        # Combine IV and encrypted data
-        encrypted_data = iv + encrypted
-        encoded = base64.b64encode(encrypted_data).decode()
-        
-        return encoded, len(message), len(encoded)
-        
-    def encrypt_rsa(self, message):
-        """Simulate RSA encryption (for demo purposes)"""
-        # In real implementation, you'd use actual RSA encryption
-        # For demo, we'll simulate the overhead and timing
-        time.sleep(0.015)  # Simulate RSA encryption delay
-        
-        # Simulate RSA padding overhead
-        encoded = base64.b64encode(f"RSA:{message}".encode()).decode()
-        # RSA typically has significant overhead
-        simulated_overhead = len(encoded) * 2  # Simulate RSA block expansion
-        
-        return encoded, len(message), simulated_overhead
         
     def send_data(self, data):
         """Send data to server"""
@@ -356,77 +345,68 @@ RSA-2048 (Asymmetric Encryption):
         msg_type = message_data.get('type')
         
         if msg_type == 'welcome':
-            # Store AES key
-            if 'aes_key' in message_data:
-                self.aes_key = base64.b64decode(message_data['aes_key'])
+            # Store AES key securely parsed using RSA if needed
+            aes_payload = message_data.get('aes_key')
+            aes_type = message_data.get('aes_key_type')
+            
+            if aes_payload:
+                if aes_type == 'rsa_encrypted':
+                    decrypted_b64 = decrypt_rsa(self.rsa_private_key, aes_payload)
+                    self.aes_key = base64.b64decode(decrypted_b64.encode('utf-8'))
+                else:
+                    self.aes_key = base64.b64decode(aes_payload.encode('utf-8'))
             self.add_to_chat("Server", message_data.get('message', ''), is_system=True)
             
         elif msg_type == 'chat':
-            # Measure decryption time
-            start_time = time.time() * 1000
-            
-            sender = message_data.get('sender', 'Unknown')
-            encrypted_msg = message_data.get('encrypted_message', '')
-            encryption_type = message_data.get('encryption_type', 'Unknown')
-            
-            # Decrypt message
-            if encryption_type.startswith('AES'):
-                decrypted_msg = self.decrypt_aes(encrypted_msg)
-            else:
-                decrypted_msg = self.decrypt_rsa(encrypted_msg)
-                
-            decryption_time = time.time() * 1000 - start_time
-            
-            # Display message with metrics
-            enc_time = message_data.get('encryption_time', 0)
-            overhead = message_data.get('overhead', 0)
-            
-            display_text = f"{decrypted_msg}\n    [{encryption_type}] Enc: {enc_time}ms, Dec: {decryption_time:.1f}ms, Overhead: {overhead}%"
-            self.add_to_chat(sender, display_text)
-            
-            # Update metrics if not our own message
-            if sender != self.username:
-                self.update_metrics('receive', decryption_time, len(decrypted_msg.encode()))
+            threading.Thread(target=self._async_receive, args=(message_data,), daemon=True).start()
                 
         elif msg_type == 'notification':
             self.add_to_chat("System", message_data.get('message', ''), is_system=True)
             
         elif msg_type == 'user_list':
-            self.update_users_list(message_data.get('users', []))
-            
-    def decrypt_aes(self, encrypted_data):
-        """Decrypt AES encrypted message"""
-        try:
-            if not self.aes_key:
-                return encrypted_data
+            users_dict = message_data.get('users', {})
+            # Update local registry of public keys!
+            self.users_public_keys.clear()
+            for user, pem_str in users_dict.items():
+                if pem_str:
+                    try:
+                        self.users_public_keys[user] = pem_to_public_key(pem_str)
+                    except:
+                        pass
+            self.update_users_list(list(users_dict.keys()))
+
+    def _async_receive(self, message_data):
+        start_time = time.time() * 1000
+        
+        sender = message_data.get('sender', 'Unknown')
+        encrypted_msg = message_data.get('encrypted_message', '')
+        encryption_type = message_data.get('encryption_type', 'Unknown')
+        
+        if encryption_type.startswith('AES'):
+            decrypted_msg = decrypt_aes(self.aes_key, encrypted_msg)
+        else:
+            try:
+                payloads = json.loads(encrypted_msg)
+                if self.username in payloads:
+                    my_ciphertext = payloads[self.username]
+                    decrypted_msg = decrypt_rsa(self.rsa_private_key, my_ciphertext)
+                elif sender == self.username:
+                    decrypted_msg = message_data.get('original_message', '')
+                else:
+                    decrypted_msg = "<Message not encrypted for me>"
+            except:
+                decrypted_msg = "<Invalid RSA payload>"
                 
-            decoded = base64.b64decode(encrypted_data.encode())
-            iv = decoded[:16]
-            encrypted = decoded[16:]
-            
-            cipher = Cipher(algorithms.AES(self.aes_key), modes.CBC(iv))
-            decryptor = cipher.decryptor()
-            
-            padded_message = decryptor.update(encrypted) + decryptor.finalize()
-            
-            # Remove padding
-            padding_length = padded_message[-1]
-            message = padded_message[:-padding_length]
-            
-            return message.decode()
-        except:
-            return "Decryption failed"
-            
-    def decrypt_rsa(self, encrypted_data):
-        """Simulate RSA decryption"""
-        try:
-            time.sleep(0.025)  # Simulate RSA decryption delay
-            decoded = base64.b64decode(encrypted_data.encode()).decode()
-            if decoded.startswith("RSA:"):
-                return decoded[4:]
-            return decoded
-        except:
-            return "Decryption failed"
+        decryption_time = time.time() * 1000 - start_time
+        
+        enc_time = message_data.get('encryption_time', 0)
+        overhead = message_data.get('overhead', 0)
+        
+        display_text = f"{decrypted_msg}\n    [{encryption_type}] Enc: {enc_time}ms, Dec: {decryption_time:.1f}ms, Overhead: {overhead}%"
+        self.add_to_chat(sender, display_text)
+        
+        if sender != self.username:
+            self.update_metrics('receive', decryption_time, len(decrypted_msg.encode()))
             
     def add_to_chat(self, sender, message, is_system=False):
         """Add message to chat display"""

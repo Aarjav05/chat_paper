@@ -6,12 +6,9 @@ import json
 import time
 import base64
 from datetime import datetime
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import serialization
 import os
+import sys
+from crypto_utils import encrypt_rsa, pem_to_public_key
 
 class ChatServer:
     def __init__(self, host='localhost', port=12345):
@@ -21,15 +18,7 @@ class ChatServer:
         self.server_socket = None
         self.running = False
         
-       
-        self.private_key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=2048
-        )
-        self.public_key = self.private_key.public_key()
-        
-        
-        self.aes_key = os.urandom(32)  
+        self.aes_key = os.urandom(32)
         
         print(f"Chat Server initialized on {host}:{port}")
         print(f"AES Key (demo): {base64.b64encode(self.aes_key).decode()[:20]}...")
@@ -44,8 +33,12 @@ class ChatServer:
             self.running = True
             
             print(f"Server listening on {self.host}:{self.port}")
-            print("Waiting for clients to connect...")
+            print("Waiting for clients to connect... (Type 'quit' to stop)")
             
+            cli_thread = threading.Thread(target=self.cli_handler)
+            cli_thread.daemon = True
+            cli_thread.start()
+
             while self.running:
                 try:
                     client_socket, address = self.server_socket.accept()
@@ -107,18 +100,30 @@ class ChatServer:
     def handle_join(self, client_socket, message_data):
         """Handle user joining the chat"""
         username = message_data.get('username', 'Anonymous')
+        public_key_pem = message_data.get('public_key', '')
         
         # Store client info
         self.clients[client_socket] = {
             'username': username,
-            'joined_at': datetime.now()
+            'joined_at': datetime.now(),
+            'public_key': public_key_pem
         }
         
+        if public_key_pem:
+            client_pub_key = pem_to_public_key(public_key_pem)
+            encrypted_aes_key, _, _ = encrypt_rsa(client_pub_key, base64.b64encode(self.aes_key).decode('utf-8'))
+            aes_payload = encrypted_aes_key
+            aes_payload_type = "rsa_encrypted"
+        else:
+            aes_payload = base64.b64encode(self.aes_key).decode()
+            aes_payload_type = "plaintext"
+
         # Send welcome message and AES key
         welcome_data = {
             'type': 'welcome',
             'message': f'Welcome to the encrypted chat, {username}!',
-            'aes_key': base64.b64encode(self.aes_key).decode(),
+            'aes_key': aes_payload,
+            'aes_key_type': aes_payload_type,
             'server_time': datetime.now().isoformat()
         }
         
@@ -133,8 +138,8 @@ class ChatServer:
         
         self.broadcast_message(join_notification, exclude=client_socket)
         
-        # Send user list
-        self.send_user_list(client_socket)
+        # Share public keys
+        self.send_user_list_to_all()
         
         print(f"User '{username}' joined the chat")
 
@@ -162,14 +167,34 @@ class ChatServer:
               f"(E:{enc_time}ms, D:{dec_time}ms)")
 
     def send_user_list(self, client_socket):
-        
-        users = [info['username'] for info in self.clients.values()]
+        users = {info['username']: info.get('public_key', '') for info in self.clients.values()}
         user_list_data = {
             'type': 'user_list',
             'users': users,
             'count': len(users)
         }
         self.send_to_client(client_socket, user_list_data)
+
+    def send_user_list_to_all(self):
+        users = {info['username']: info.get('public_key', '') for info in self.clients.values()}
+        user_list_data = {
+            'type': 'user_list',
+            'users': users,
+            'count': len(users)
+        }
+        self.broadcast_message(user_list_data)
+
+    def cli_handler(self):
+        """Handle CLI background commands like quit"""
+        while self.running:
+            try:
+                cmd = input().strip()
+                if cmd.lower() == 'quit':
+                    print("\nShutting down server...")
+                    self.stop_server()
+                    os._exit(0)
+            except Exception:
+                pass
 
     def broadcast_message(self, message_data, exclude=None):
         
@@ -211,6 +236,7 @@ class ChatServer:
             }
             
             self.broadcast_message(leave_notification)
+            self.send_user_list_to_all()
             print(f"User '{username}' left the chat")
         
         try:
